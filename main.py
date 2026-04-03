@@ -3,11 +3,12 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
 import os
+import uvicorn
 
-app = FastAPI(title="Mente Digital SaaS API")
+app = FastAPI(title="Mente Digital Pro API")
 
 # --- CONFIGURACIÓN DE CORS ---
-# Esto es VITAL para que tu App de Flutter en Android/iOS pueda hablar con Render
+# Vital para que el APK de Flutter no sea bloqueado
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,10 +17,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ruta de la base de datos (Estructura de carpetas en tu Kali)
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "database.db")
+# Configuración de base de datos
+# Usamos una ruta absoluta basada en la ubicación de este archivo
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "..", "database.db")
 
-# --- MODELOS DE DATOS (Pydantic) ---
+# --- MODELOS ---
 class UserAuth(BaseModel):
     email: str
     password: str
@@ -32,20 +35,15 @@ class BinanceKeys(BaseModel):
 # --- UTILIDADES ---
 def get_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # Permite acceder a columnas por nombre
+    conn.row_factory = sqlite3.Row
     return conn
 
-# --- RUTAS / ENDPOINTS ---
+# --- RUTAS ---
 
 @app.get("/")
-def health_check():
-    return {
-        "status": "online", 
-        "brand": "Mente Digital Pro",
-        "system": "Sistema Aeterna Trading"
-    }
+def home():
+    return {"status": "Mente Digital Server Online", "version": "1.0.0"}
 
-# 1. LOGIN: Devuelve el estatus VIP para que la App decida qué pantalla mostrar
 @app.post("/login")
 async def login(user: UserAuth):
     db = get_db()
@@ -56,19 +54,16 @@ async def login(user: UserAuth):
             (user.email, user.password)
         )
         row = cursor.fetchone()
-        
         if row:
             return {
                 "email": row["email"],
-                "subscription_status": row["subscription_status"], # 'active' o 'inactive'
-                "message": "Acceso concedido"
+                "subscription_status": row["subscription_status"],
+                "message": "Login exitoso"
             }
-        else:
-            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+        raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     finally:
         db.close()
 
-# 2. REGISTRO: Crea usuarios nuevos con estatus 'inactive' por defecto
 @app.post("/register")
 async def register(user: UserAuth):
     db = get_db()
@@ -79,13 +74,12 @@ async def register(user: UserAuth):
             (user.email, user.password, "inactive")
         )
         db.commit()
-        return {"message": "Usuario registrado correctamente"}
+        return {"message": "Usuario registrado"}
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="El correo ya existe en el sistema")
+        raise HTTPException(status_code=400, detail="El usuario ya existe")
     finally:
         db.close()
 
-# 3. VERIFICAR STATUS: Consulta rápida para refrescar la App
 @app.get("/user-status/{email}")
 async def get_status(email: str):
     db = get_db()
@@ -93,24 +87,12 @@ async def get_status(email: str):
     cursor.execute("SELECT subscription_status FROM users WHERE email = ?", (email,))
     row = cursor.fetchone()
     db.close()
-    
     if row:
         return {"status": row["subscription_status"]}
     return {"status": "inactive"}
 
-# 4. GUARDAR LLAVES BINANCE: Para el funcionamiento del bot
-@app.post("/save-keys")
-async def save_keys(keys: BinanceKeys):
-    db = get_db()
-    cursor = db.cursor()
-    try:
-        cursor.execute(
-            "UPDATE users SET api_key = ?, api_secret = ? WHERE email = ?",
-            (keys.api_key, keys.api_secret, keys.email)
-        )
-        db.commit()
-        return {"message": "Configuración de API Binance guardada exitosamente"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+# --- INICIO DEL SERVIDOR (CRÍTICO PARA RENDER) ---
+if __name__ == "__main__":
+    # Render asigna el puerto mediante la variable de entorno PORT
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
