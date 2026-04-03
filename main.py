@@ -1,14 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import os
 import uvicorn
 
-app = FastAPI(title="Mente Digital Pro API")
+app = FastAPI(title="Mente Digital Pro API - PostgreSQL")
 
 # --- CONFIGURACIÓN DE CORS ---
-# Vital para que el APK de Flutter no sea bloqueado
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,10 +17,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuración de base de datos
-# Usamos una ruta absoluta basada en la ubicación de este archivo
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "..", "database.db")
+# --- CONEXIÓN A POSTGRESQL ---
+# Render proporciona la URL en la variable de entorno DATABASE_URL
+DATABASE_URL = os.environ.get('DATABASE_URL')
+
+def get_db_connection():
+    try:
+        # Esto conecta directamente usando la URL de Render
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        return conn
+    except Exception as e:
+        print(f"Error conectando a la base de datos: {e}")
+        return None
 
 # --- MODELOS ---
 class UserAuth(BaseModel):
@@ -32,25 +40,22 @@ class BinanceKeys(BaseModel):
     api_key: str
     api_secret: str
 
-# --- UTILIDADES ---
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
 # --- RUTAS ---
 
 @app.get("/")
 def home():
-    return {"status": "Mente Digital Server Online", "version": "1.0.0"}
+    return {"status": "Mente Digital Server Online", "database": "PostgreSQL Active"}
 
 @app.post("/login")
 async def login(user: UserAuth):
-    db = get_db()
-    cursor = db.cursor()
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de base de datos")
+    
+    cursor = conn.cursor()
     try:
         cursor.execute(
-            "SELECT email, subscription_status FROM users WHERE email = ? AND password = ?",
+            "SELECT email, subscription_status FROM users WHERE email = %s AND password = %s",
             (user.email, user.password)
         )
         row = cursor.fetchone()
@@ -62,37 +67,47 @@ async def login(user: UserAuth):
             }
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
     finally:
-        db.close()
+        cursor.close()
+        conn.close()
 
 @app.post("/register")
 async def register(user: UserAuth):
-    db = get_db()
-    cursor = db.cursor()
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de base de datos")
+    
+    cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT INTO users (email, password, subscription_status) VALUES (?, ?, ?)",
+            "INSERT INTO users (email, password, subscription_status) VALUES (%s, %s, %s)",
             (user.email, user.password, "inactive")
         )
-        db.commit()
+        conn.commit()
         return {"message": "Usuario registrado"}
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="El usuario ya existe")
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="El usuario ya existe o error en datos")
     finally:
-        db.close()
+        cursor.close()
+        conn.close()
 
 @app.get("/user-status/{email}")
 async def get_status(email: str):
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT subscription_status FROM users WHERE email = ?", (email,))
+    conn = get_db_connection()
+    if not conn:
+        return {"status": "inactive"}
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT subscription_status FROM users WHERE email = %s", (email,))
     row = cursor.fetchone()
-    db.close()
+    cursor.close()
+    conn.close()
+    
     if row:
         return {"status": row["subscription_status"]}
     return {"status": "inactive"}
 
-# --- INICIO DEL SERVIDOR (CRÍTICO PARA RENDER) ---
+# --- INICIO DEL SERVIDOR ---
 if __name__ == "__main__":
-    # Render asigna el puerto mediante la variable de entorno PORT
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
