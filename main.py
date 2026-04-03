@@ -6,11 +6,9 @@ from pydantic import BaseModel
 from passlib.context import CryptContext
 import uvicorn
 
-# Inicializamos FastAPI
-app = FastAPI(title="Mente Digital VIP API")
+app = FastAPI(title="Mente Digital API VIP")
 
-# --- CONFIGURACIÓN DE SEGURIDAD (CORS) ---
-# Esto permite que tu APK de Flutter se conecte desde cualquier parte del mundo
+# --- EL PUENTE DE COMUNICACIÓN (CORS) ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -19,22 +17,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configuración para encriptar contraseñas de usuarios
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# --- CONEXIÓN A BASE DE DATOS (SEGURIDAD MÁXIMA) ---
-# No ponemos la URL aquí. La leerá de Render automáticamente.
+# --- CONEXIÓN SEGURA CON RENDER ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
     if not DATABASE_URL:
-        raise Exception("ERROR: La variable DATABASE_URL no está configurada en Render.")
-    
-    # Render usa 'postgres://', pero SQLAlchemy/Psycopg2 necesitan 'postgresql://'
+        raise Exception("Error: DATABASE_URL no configurada en Render")
     url = DATABASE_URL
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    
     return psycopg2.connect(url)
 
 # --- MODELOS DE DATOS ---
@@ -47,59 +40,65 @@ class BinanceKeys(BaseModel):
     api_key: str
     api_secret: str
 
-# --- RUTAS / ENDPOINTS ---
+# --- RUTAS ---
 
 @app.get("/")
-def home():
-    return {
-        "status": "Mente Digital VIP Online",
-        "database": "Connected",
-        "security": "Environment Variables Active"
-    }
+def health():
+    return {"status": "Mente Digital Online", "server": "Render Cloud"}
 
+# 1. REGISTRO
 @app.post("/register")
 async def register(user: User):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        
-        # Encriptamos la contraseña antes de guardarla
         hashed_pw = pwd_context.hash(user.password)
-        
-        # Insertar o ignorar si ya existe
         cur.execute(
             "INSERT INTO users (email, password) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING",
             (user.email, hashed_pw)
         )
-        
         conn.commit()
         cur.close()
         conn.close()
-        return {"status": "success", "message": "Usuario gestionado correctamente"}
+        return {"status": "success", "message": "Usuario registrado"}
     except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
+        raise HTTPException(status_code=500, detail="Error al registrar")
 
+# 2. LOGIN (Faltaba en tu código)
+@app.post("/login")
+async def login(user: User):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT password FROM users WHERE email = %s", (user.email,))
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if result and pwd_context.verify(user.password, result[0]):
+            return {"status": "success", "message": "Acceso concedido"}
+        else:
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error en el servidor")
+
+# 3. GUARDAR API KEYS (Faltaba en tu código)
 @app.post("/save-keys")
 async def save_keys(keys: BinanceKeys):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        
         cur.execute(
             "UPDATE users SET api_key = %s, api_secret = %s WHERE email = %s",
             (keys.api_key, keys.api_secret, keys.email)
         )
-        
         conn.commit()
         cur.close()
         conn.close()
-        return {"status": "success", "message": "API Keys vinculadas correctamente"}
+        return {"status": "success", "message": "Llaves vinculadas"}
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Error al vincular llaves")
+        raise HTTPException(status_code=500, detail="Error al guardar llaves")
 
-# --- INICIO DEL SERVIDOR ---
 if __name__ == "__main__":
-    # Render asigna el puerto automáticamente
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
