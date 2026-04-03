@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 import uvicorn
 
 # Inicializamos FastAPI
-app = FastAPI(title="Mente Digital SaaS API")
+app = FastAPI(title="Mente Digital VIP API")
 
 # --- CONFIGURACIÓN DE SEGURIDAD (CORS) ---
 # Esto permite que tu APK de Flutter se conecte desde cualquier parte del mundo
@@ -52,7 +52,7 @@ class BinanceKeys(BaseModel):
 @app.get("/")
 def home():
     return {
-        "status": "Mente Digital Gateway Online",
+        "status": "Mente Digital VIP Online",
         "database": "Connected",
         "security": "Environment Variables Active"
     }
