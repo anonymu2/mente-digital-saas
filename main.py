@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from .database import get_db_connection  # <--- IMPORTA TU TRABAJO PREVIO
+import database  # <-- CAMBIO CLAVE: Importación directa sin el punto (.)
 
 app = FastAPI(title="Mente Digital VIP API")
 
@@ -19,7 +19,9 @@ async def root():
 @app.get("/history/{email}")
 async def get_history(email: str):
     """Consulta el historial de trades directamente desde PostgreSQL"""
-    conn = get_db_connection()
+    # Usamos el módulo database que importamos arriba
+    conn = database.get_db_connection() 
+    
     if not conn:
         raise HTTPException(status_code=500, detail="Error de conexión a la base de datos")
     
@@ -43,5 +45,6 @@ async def get_history(email: str):
         conn.close()
         return data
     except Exception as e:
-        if conn: conn.close()
+        if conn:
+            conn.close()
         raise HTTPException(status_code=500, detail=str(e))
