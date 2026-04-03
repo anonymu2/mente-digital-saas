@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import sqlite3
@@ -6,8 +6,8 @@ import os
 
 app = FastAPI(title="Mente Digital SaaS API")
 
-# --- CONFIGURACIÓN DE SEGURIDAD (CORS) ---
-# Esto permite que tu App de Flutter se conecte sin bloqueos
+# --- CONFIGURACIÓN DE CORS ---
+# Esto es VITAL para que tu App de Flutter en Android/iOS pueda hablar con Render
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,10 +16,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ruta de la base de datos (Ajustada para la estructura de carpetas de Kali)
+# Ruta de la base de datos (Estructura de carpetas en tu Kali)
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "database.db")
 
-# --- MODELOS DE DATOS ---
+# --- MODELOS DE DATOS (Pydantic) ---
 class UserAuth(BaseModel):
     email: str
     password: str
@@ -32,16 +32,20 @@ class BinanceKeys(BaseModel):
 # --- UTILIDADES ---
 def get_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # Permite acceder a datos por nombre de columna
+    conn.row_factory = sqlite3.Row  # Permite acceder a columnas por nombre
     return conn
 
 # --- RUTAS / ENDPOINTS ---
 
 @app.get("/")
 def health_check():
-    return {"status": "online", "brand": "Mente Digital Pro"}
+    return {
+        "status": "online", 
+        "brand": "Mente Digital Pro",
+        "system": "Sistema Aeterna Trading"
+    }
 
-# 1. LOGIN (Retorna subscription_status para la App)
+# 1. LOGIN: Devuelve el estatus VIP para que la App decida qué pantalla mostrar
 @app.post("/login")
 async def login(user: UserAuth):
     db = get_db()
@@ -64,7 +68,7 @@ async def login(user: UserAuth):
     finally:
         db.close()
 
-# 2. REGISTRO (Crea usuarios como 'inactive' por defecto)
+# 2. REGISTRO: Crea usuarios nuevos con estatus 'inactive' por defecto
 @app.post("/register")
 async def register(user: UserAuth):
     db = get_db()
@@ -77,11 +81,11 @@ async def register(user: UserAuth):
         db.commit()
         return {"message": "Usuario registrado correctamente"}
     except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="El correo ya está registrado")
+        raise HTTPException(status_code=400, detail="El correo ya existe en el sistema")
     finally:
         db.close()
 
-# 3. VERIFICAR STATUS (Endpoint rápido para la App)
+# 3. VERIFICAR STATUS: Consulta rápida para refrescar la App
 @app.get("/user-status/{email}")
 async def get_status(email: str):
     db = get_db()
@@ -94,7 +98,7 @@ async def get_status(email: str):
         return {"status": row["subscription_status"]}
     return {"status": "inactive"}
 
-# 4. GUARDAR LLAVES DE BINANCE
+# 4. GUARDAR LLAVES BINANCE: Para el funcionamiento del bot
 @app.post("/save-keys")
 async def save_keys(keys: BinanceKeys):
     db = get_db()
@@ -105,26 +109,8 @@ async def save_keys(keys: BinanceKeys):
             (keys.api_key, keys.api_secret, keys.email)
         )
         db.commit()
-        return {"message": "Configuración de Binance guardada"}
+        return {"message": "Configuración de API Binance guardada exitosamente"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
-
-# --- INICIALIZACIÓN DE TABLA (Si no existe) ---
-@app.on_event("startup")
-def setup_database():
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE,
-            password TEXT,
-            subscription_status TEXT DEFAULT 'inactive',
-            api_key TEXT,
-            api_secret TEXT
-        )
-    """)
-    db.commit()
-    db.close()
