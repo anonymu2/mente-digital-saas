@@ -1,13 +1,13 @@
-import os
-import psycopg2
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
-from passlib.context import CryptContext
-import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
+import sqlite3
+import os
 
-app = FastAPI(title="Mente Digital SaaS - Payment System")
+app = FastAPI(title="Mente Digital SaaS API")
 
+# --- CONFIGURACIÓN DE SEGURIDAD (CORS) ---
+# Esto permite que tu App de Flutter se conecte sin bloqueos
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,84 +16,115 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Ruta de la base de datos (Ajustada para la estructura de carpetas de Kali)
+DB_PATH = os.path.join(os.path.dirname(__file__), "..", "database.db")
 
-def get_db_connection():
-    url = DATABASE_URL
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return psycopg2.connect(url)
-
-# --- MODELOS ---
-class User(BaseModel):
+# --- MODELOS DE DATOS ---
+class UserAuth(BaseModel):
     email: str
     password: str
 
-class Payment(BaseModel):
+class BinanceKeys(BaseModel):
     email: str
-    txid: str
+    api_key: str
+    api_secret: str
 
-# --- RUTAS ---
+# --- UTILIDADES ---
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row  # Permite acceder a datos por nombre de columna
+    return conn
+
+# --- RUTAS / ENDPOINTS ---
 
 @app.get("/")
-def home():
-    return {"status": "Aeterna Bot System Live"}
+def health_check():
+    return {"status": "online", "brand": "Mente Digital Pro"}
 
-# 1. Registro (Crea el usuario como INACTIVO por defecto)
-@app.post("/register")
-async def register(user: User):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        hashed_pw = pwd_context.hash(user.password)
-        # Seteamos 'active' como False al registrar
-        cur.execute(
-            "INSERT INTO users (email, password, active) VALUES (%s, %s, FALSE) ON CONFLICT (email) DO NOTHING",
-            (user.email, hashed_pw)
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Error de registro")
-
-# 2. Login (Devuelve si el usuario está activo o no)
+# 1. LOGIN (Retorna subscription_status para la App)
 @app.post("/login")
-async def login(user: User):
+async def login(user: UserAuth):
+    db = get_db()
+    cursor = db.cursor()
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT password, active FROM users WHERE email = %s", (user.email,))
-        result = cur.fetchone()
-        cur.close()
-        conn.close()
-
-        if result and pwd_context.verify(user.password, result[0]):
-            return {"status": "success", "active": result[1]}
-        raise HTTPException(status_code=401, detail="Error de acceso")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Error de servidor")
-
-# 3. Verificar Pago (Recibe el TXID de los 50 USDT)
-@app.post("/verify-payment")
-async def verify_payment(pay: Payment):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # Guardamos el TXID para que tú lo revises en tu Binance
-        cur.execute(
-            "UPDATE users SET txid = %s WHERE email = %s",
-            (pay.txid, pay.email)
+        cursor.execute(
+            "SELECT email, subscription_status FROM users WHERE email = ? AND password = ?",
+            (user.email, user.password)
         )
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"status": "success", "message": "TXID registrado para revision"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Error al procesar TXID")
+        row = cursor.fetchone()
+        
+        if row:
+            return {
+                "email": row["email"],
+                "subscription_status": row["subscription_status"], # 'active' o 'inactive'
+                "message": "Acceso concedido"
+            }
+        else:
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+    finally:
+        db.close()
 
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+# 2. REGISTRO (Crea usuarios como 'inactive' por defecto)
+@app.post("/register")
+async def register(user: UserAuth):
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO users (email, password, subscription_status) VALUES (?, ?, ?)",
+            (user.email, user.password, "inactive")
+        )
+        db.commit()
+        return {"message": "Usuario registrado correctamente"}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="El correo ya está registrado")
+    finally:
+        db.close()
+
+# 3. VERIFICAR STATUS (Endpoint rápido para la App)
+@app.get("/user-status/{email}")
+async def get_status(email: str):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT subscription_status FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    db.close()
+    
+    if row:
+        return {"status": row["subscription_status"]}
+    return {"status": "inactive"}
+
+# 4. GUARDAR LLAVES DE BINANCE
+@app.post("/save-keys")
+async def save_keys(keys: BinanceKeys):
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET api_key = ?, api_secret = ? WHERE email = ?",
+            (keys.api_key, keys.api_secret, keys.email)
+        )
+        db.commit()
+        return {"message": "Configuración de Binance guardada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+# --- INICIALIZACIÓN DE TABLA (Si no existe) ---
+@app.on_event("startup")
+def setup_database():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE,
+            password TEXT,
+            subscription_status TEXT DEFAULT 'inactive',
+            api_key TEXT,
+            api_secret TEXT
+        )
+    """)
+    db.commit()
+    db.close()
