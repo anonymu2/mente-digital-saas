@@ -9,7 +9,9 @@ router = APIRouter()
 def register(user: UserRegister):
     conn = get_db()
     cur = conn.cursor()
+
     hashed = hash_password(user.password)
+
     try:
         cur.execute(
             "INSERT INTO users (email, password, is_vip) VALUES (%s, %s, FALSE)",
@@ -19,16 +21,22 @@ def register(user: UserRegister):
         return {"status": "registered"}
     except:
         raise HTTPException(400, "Usuario ya existe")
+    finally:
+        cur.close()
 
 @router.post("/login")
 def login(user: UserLogin):
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("SELECT password, is_vip FROM users WHERE email=%s", (user.email,))
     db_user = cur.fetchone()
+
     if not db_user or not verify_password(user.password, db_user["password"]):
         raise HTTPException(401, "Credenciales incorrectas")
+
     token = create_token({"email": user.email})
+
     return {
         "access_token": token,
         "email": user.email,
