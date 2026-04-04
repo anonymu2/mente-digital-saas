@@ -1,8 +1,9 @@
-import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import os
+
+DB_URL = os.environ.get("DATABASE_URL")  # variable de entorno
 
 def get_db():
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     return conn
