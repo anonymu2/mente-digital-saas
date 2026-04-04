@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 psycopg2-binary
+PyJWT
+bcrypt
 python-jose
 passlib[bcrypt]
 cryptography
