@@ -5,5 +5,5 @@ python-jose
 passlib[bcrypt]
 cryptography
 ccxt
-firebase-admin
-requests
+pydantic[email]
+email-validator
