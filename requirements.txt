@@ -7,3 +7,4 @@ cryptography
 ccxt
 pydantic[email]
 email-validator
+PyJWT==2.12.1
