@@ -1,12 +1,13 @@
 # database.py
-users = [
-    {
-        "id": 1,
-        "name": "Juan Pérez",
-        "email": "juan@email.com",
-        "password": "123456",
-        "vipStatus": "inactive",
-        "profit": 0.0,
-        "token": "abc123"
-    }
-]
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+def get_db():
+    conn = psycopg2.connect(
+        host="localhost",
+        database="mente_digital",
+        user="tu_usuario",
+        password="tu_password",
+        cursor_factory=RealDictCursor
+    )
+    return conn
