@@ -1,8 +1,12 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import os
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-def get_db():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+# database.py
+users = [
+    {
+        "id": 1,
+        "name": "Juan Pérez",
+        "email": "juan@email.com",
+        "password": "123456",
+        "vipStatus": "inactive",
+        "profit": 0.0,
+        "token": "abc123"
+    }
+]
