@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from routes import auth, user, trading, payment
+import auth
+import user
+import trading
+import payment
 
 app = FastAPI(title="Mente Digital API PRO")
 
