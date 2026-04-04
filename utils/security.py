@@ -1,24 +1,22 @@
-# utils/security.py
-import bcrypt, jwt
-from fastapi import HTTPException
+import os
+from passlib.context import CryptContext
+from jose import jwt, JWTError
 
-SECRET = "TU_SECRET_KEY"
+SECRET_KEY = os.getenv("SECRET_KEY", "MI_SECRET_KEY_SUPER_SEGURO")
+ALGORITHM = "HS256"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Hash de contraseña
-def hash_password(password: str):
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+def hash_password(password):
+    return pwd_context.hash(password)
 
-def verify_password(password: str, hashed: str):
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
 
-# JWT
-def create_token(payload: dict):
-    import datetime
-    payload["exp"] = datetime.datetime.utcnow() + datetime.timedelta(days=7)
-    return jwt.encode(payload, SECRET, algorithm="HS256")
+def create_token(data: dict):
+    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
 
 def decode_token(token: str):
     try:
-        return jwt.decode(token, SECRET, algorithms=["HS256"])
-    except:
-        raise HTTPException(401, "Token inválido")
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
