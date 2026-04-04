@@ -1,19 +1,16 @@
-from passlib.context import CryptContext
-from jose import jwt
-from datetime import datetime, timedelta
+# utils/security.py
+from fastapi import Request, HTTPException
+from database import users
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def get_user_by_token(token: str):
+    return next((u for u in users if u["token"] == token), None)
 
-SECRET_KEY = "MENTE_DIGITAL_SECRET"
-ALGORITHM = "HS256"
-
-def hash_password(password: str):
-    return pwd_context.hash(password)
-
-def verify_password(password: str, hashed: str):
-    return pwd_context.verify(password, hashed)
-
-def create_token(data: dict):
-    data_copy = data.copy()
-    data_copy["exp"] = datetime.utcnow() + timedelta(hours=24)
-    return jwt.encode(data_copy, SECRET_KEY, algorithm=ALGORITHM)
+def auth_middleware(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="No token")
+    token = auth_header.split(" ")[1]
+    user = get_user_by_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Token inválido")
+    return user
