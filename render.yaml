@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: mente-digital-api
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        value: "postgresql://mente_digital_db_user:pZxzCrtBwn5ec3XANj4bfwkJL9Rvy7NZ@dpg-d77qjb95pdvs73976ga0-a.oregon-postgres.render.com/mente_digital_db"
+      - key: SECRET_KEY
+        value: "MI_SECRET_KEY_SUPER_SEGURO"
+      - key: BINANCE_API_KEY
+        value: "TU_API_KEY"
+      - key: BINANCE_SECRET
+        value: "TU_API_SECRET"
