@@ -1,7 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from utils.security import decode_token
 from database import get_db
-from utils.binance_bot import get_profit
 
 router = APIRouter()
 
@@ -11,15 +10,13 @@ def dashboard(token: str):
     cur = conn.cursor()
     try:
         user_data = decode_token(token)
-        if not user_data:
-            raise HTTPException(401, "Token inválido")
-        cur.execute("SELECT email, is_vip FROM users WHERE email=%s", (user_data["email"],))
+        cur.execute("SELECT email, is_vip, profit FROM users WHERE email=%s", (user_data["email"],))
         db_user = cur.fetchone()
         if not db_user:
             raise HTTPException(404, "Usuario no encontrado")
         return {
             "email": db_user["email"],
-            "profit": get_profit(db_user["email"]),
+            "profit": db_user.get("profit", 0.0),
             "vipStatus": "active" if db_user["is_vip"] else "inactive"
         }
     finally:
